@@ -57,6 +57,7 @@ class SimulationEngine:
         self.constraint_engine = ConstraintEngine()
         self.world_rule_engine = WorldRuleEngine()
         self.history: list[HistoryEvent] = []
+        self.snapshots: list[dict] = []  # Time-series snapshots recorded at each step
         self.rng = random.Random(seed)
 
         # Initialize with creation event
@@ -75,6 +76,36 @@ class SimulationEngine:
         """Get current simulation state."""
         return self.state.model_copy()
 
+    def get_timeseries(
+        self,
+        variables: list[str] | None = None,
+        from_time: int | None = None,
+        to_time: int | None = None,
+    ) -> list[dict]:
+        """Get time-series snapshots. Optionally filter by variable names and time range."""
+        result = self.snapshots
+
+        if from_time is not None:
+            result = [s for s in result if s["time"] >= from_time]
+        if to_time is not None:
+            result = [s for s in result if s["time"] <= to_time]
+
+        if variables:
+            filtered = []
+            for snap in result:
+                row: dict = {"time": snap["time"]}
+                for var in variables:
+                    if var in snap["resources"]:
+                        row[var] = snap["resources"][var]
+                    elif var in snap["metrics"]:
+                        row[var] = snap["metrics"][var]
+                    elif var in snap["flags"]:
+                        row[var] = snap["flags"][var]
+                filtered.append(row)
+            return filtered
+
+        return result
+
     def get_history(self, limit: int | None = None) -> list[HistoryEvent]:
         """Get simulation history."""
         if limit:
@@ -88,9 +119,12 @@ class SimulationEngine:
                 return event
         return None
 
-    def reset(self, seed: int | None = None) -> None:
+    def reset(self, seed: int | None = None, keep_rules: bool = False) -> None:
         """Reset simulation to initial state."""
         old_sim_id = self.state.simulation_id
+        # Save rules before reset if requested
+        saved_rules = self.world_rule_engine.rules.copy() if keep_rules else []
+
         self.state = SimulationState(seed=seed)
         if seed is not None:
             self.state.seed = seed
@@ -99,6 +133,12 @@ class SimulationEngine:
             self.rng = random.Random()
 
         self.history.clear()
+        self.snapshots.clear()
+
+        # Restore rules if requested
+        if keep_rules:
+            self.world_rule_engine.rules = saved_rules
+
         self._add_event(
             EventType.SIMULATION_RESET,
             reason=f"Simulation reset with seed {seed}",
@@ -111,13 +151,15 @@ class SimulationEngine:
             seed=seed,
         )
 
-    def fork(self) -> "SimulationEngine":
+    def fork(self, name: str | None = None) -> "SimulationEngine":
         """Create a fork of the current simulation."""
         # Deep copy state
         forked_state = self.state.model_copy()
         forked_state.simulation_id = UUID(int=random.getrandbits(128))
         forked_state.metadata["forked_from"] = str(self.state.simulation_id)
         forked_state.metadata["forked_at_time"] = self.state.time
+        if name:
+            forked_state.metadata["fork_name"] = name
 
         # Create new engine with forked state
         forked_engine = SimulationEngine.__new__(SimulationEngine)
@@ -128,6 +170,7 @@ class SimulationEngine:
         forked_engine.constraint_engine.constraints = self.constraint_engine.constraints.copy()
         forked_engine.world_rule_engine.rules = self.world_rule_engine.rules.copy()
         forked_engine.history = self.history.copy()
+        forked_engine.snapshots = self.snapshots.copy()
         forked_engine.rng = random.Random(self.state.seed)
 
         # Add fork event
@@ -194,15 +237,59 @@ class SimulationEngine:
                     reason=reason,
                 )
 
-            # Apply world rules (if step action or configured to auto-apply)
+            # Apply world rules and record snapshots (per step for multi-step)
             applied_rules: list[str] = []
-            if action_name == "step" and self.world_rule_engine.rules:
-                new_state, applied_rules = self.world_rule_engine.apply_rules(new_state)
+            steps_taken = int(params.get("steps", 1)) if action_name == "step" else 1
+
+            if action_name == "step" and steps_taken > 1:
+                # Re-simulate step-by-step from state_before for proper world rule accumulation
+                intermediate = state_before.model_copy()
+                for _ in range(steps_taken):
+                    intermediate.time += 1
+                    intermediate.updated_at = datetime.now(UTC)
+                    if self.world_rule_engine.rules:
+                        intermediate, step_rules = self.world_rule_engine.apply_rules(intermediate)
+                        applied_rules.extend(step_rules)
+                    self.snapshots.append({
+                        "time": intermediate.time,
+                        "resources": dict(intermediate.resources),
+                        "metrics": dict(intermediate.metrics),
+                        "flags": dict(intermediate.flags),
+                    })
+                new_state = intermediate
                 if applied_rules:
-                    reason += f" | World rules applied: {', '.join(applied_rules)}"
+                    unique_rules = list(dict.fromkeys(applied_rules))
+                    reason += f" | World rules applied: {', '.join(unique_rules)}"
+            elif action_name == "step":
+                if self.world_rule_engine.rules:
+                    new_state, applied_rules = self.world_rule_engine.apply_rules(new_state)
+                    if applied_rules:
+                        reason += f" | World rules applied: {', '.join(applied_rules)}"
+                self.snapshots.append({
+                    "time": new_state.time,
+                    "resources": dict(new_state.resources),
+                    "metrics": dict(new_state.metrics),
+                    "flags": dict(new_state.flags),
+                })
 
             # Apply state change
             self.state = new_state
+
+            # For non-step actions: record snapshot if resources/metrics/flags changed
+            if action_name != "step":
+                state_changed = (
+                    state_before.resources != new_state.resources
+                    or state_before.metrics != new_state.metrics
+                    or state_before.flags != new_state.flags
+                )
+                if state_changed:
+                    self.snapshots.append({
+                        "time": new_state.time,
+                        "action": action_name,
+                        "resources": dict(new_state.resources),
+                        "metrics": dict(new_state.metrics),
+                        "flags": dict(new_state.flags),
+                    })
 
             # Compute delta
             delta = compute_delta(

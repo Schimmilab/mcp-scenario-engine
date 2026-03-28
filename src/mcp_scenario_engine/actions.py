@@ -28,9 +28,12 @@ class StepAction(Action):
     def execute(
         self, state: SimulationState, params: dict[str, Any], rng: random.Random
     ) -> tuple[SimulationState, str]:
-        """Advance time by 1."""
+        """Advance time by N steps (default 1)."""
+        steps = int(params.get("steps", 1))
+        if steps < 1:
+            raise ValueError("Parameter 'steps' must be >= 1")
         new_state = state.model_copy()
-        new_state.time += 1
+        new_state.time += steps
         return new_state, f"Advanced simulation time from {state.time} to {new_state.time}"
 
 
@@ -73,12 +76,12 @@ class AdjustResourceAction(Action):
     ) -> tuple[SimulationState, str]:
         """Adjust resource value."""
         resource_name = params.get("resource")
-        delta = params.get("delta")
+        delta = params.get("delta", params.get("amount"))
 
         if not resource_name:
             raise ValueError("Parameter 'resource' is required")
         if delta is None:
-            raise ValueError("Parameter 'delta' is required")
+            raise ValueError("Parameter 'delta' (or 'amount') is required")
 
         new_state = state.model_copy()
         old_value = new_state.resources.get(resource_name, 0.0)
@@ -116,6 +119,35 @@ class SetMetricAction(Action):
         return (
             new_state,
             f"Set metric '{metric_name}' from {old_value} to {value}",
+        )
+
+
+class AdjustMetricAction(Action):
+    """Adjust a metric by a delta amount."""
+
+    name = "adjust_metric"
+    description = "Adjust a metric by adding/subtracting a value"
+
+    def execute(
+        self, state: SimulationState, params: dict[str, Any], rng: random.Random
+    ) -> tuple[SimulationState, str]:
+        """Adjust metric value."""
+        metric_name = params.get("metric")
+        delta = params.get("delta", params.get("amount"))
+
+        if not metric_name:
+            raise ValueError("Parameter 'metric' is required")
+        if delta is None:
+            raise ValueError("Parameter 'delta' (or 'amount') is required")
+
+        new_state = state.model_copy()
+        old_value = new_state.metrics.get(metric_name, 0.0)
+        new_value = old_value + float(delta)
+        new_state.metrics[metric_name] = new_value
+
+        return (
+            new_state,
+            f"Adjusted metric '{metric_name}' by {delta} (from {old_value} to {new_value})",
         )
 
 
@@ -236,14 +268,63 @@ class SimulateLoadAction(Action):
         )
 
 
+class InitializeAction(Action):
+    """Initialize simulation state in a single batch call."""
+
+    name = "initialize"
+    description = "Set multiple resources, metrics, flags, entities and metadata in one call"
+
+    def execute(
+        self, state: SimulationState, params: dict[str, Any], rng: random.Random
+    ) -> tuple[SimulationState, str]:
+        """Batch-initialize state."""
+        new_state = state.model_copy()
+        changes: list[str] = []
+
+        resources = params.get("resources", {})
+        for k, v in resources.items():
+            new_state.resources[k] = float(v)
+        if resources:
+            changes.append(f"{len(resources)} resources")
+
+        metrics = params.get("metrics", {})
+        for k, v in metrics.items():
+            new_state.metrics[k] = float(v)
+        if metrics:
+            changes.append(f"{len(metrics)} metrics")
+
+        flags = params.get("flags", {})
+        for k, v in flags.items():
+            new_state.flags[k] = bool(v)
+        if flags:
+            changes.append(f"{len(flags)} flags")
+
+        entities = params.get("entities", {})
+        for k, v in entities.items():
+            new_state.entities[k] = v
+        if entities:
+            changes.append(f"{len(entities)} entities")
+
+        metadata = params.get("metadata", {})
+        for k, v in metadata.items():
+            new_state.metadata[k] = v
+        if metadata:
+            changes.append(f"{len(metadata)} metadata entries")
+
+        summary = ", ".join(changes) if changes else "nothing"
+        return new_state, f"Initialized: {summary}"
+
+
 # Action registry
 ACTION_REGISTRY: dict[str, type[Action]] = {
     "step": StepAction,
     "set_resource": SetResourceAction,
     "adjust_resource": AdjustResourceAction,
     "set_metric": SetMetricAction,
+    "adjust_metric": AdjustMetricAction,
     "set_flag": SetFlagAction,
     "add_entity": AddEntityAction,
     "remove_entity": RemoveEntityAction,
     "simulate_load": SimulateLoadAction,
+    "initialize": InitializeAction,
 }

@@ -58,3 +58,6 @@ INSTALLATION.md
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code local settings (personal)
+.claude/settings.local.json

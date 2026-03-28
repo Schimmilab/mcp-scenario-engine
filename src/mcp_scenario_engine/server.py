@@ -66,8 +66,8 @@ async def list_tools() -> list[Tool]:
             name="apply_action",
             description=(
                 "Apply an action to the simulation. "
-                "Available actions: step, set_resource, adjust_resource, set_metric, "
-                "set_flag, add_entity, remove_entity, simulate_load"
+                "Available actions: step, set_resource, adjust_resource, set_metric, adjust_metric, "
+                "set_flag, add_entity, remove_entity, simulate_load, initialize"
             ),
             inputSchema={
                 "type": "object",
@@ -95,15 +95,28 @@ async def list_tools() -> list[Tool]:
                         "type": "number",
                         "description": "Optional random seed for deterministic execution",
                     },
+                    "keep_rules": {
+                        "type": "boolean",
+                        "description": "If true, world rules are preserved after reset (default false)",
+                    },
                 },
             },
         ),
         Tool(
             name="fork_timeline",
-            description="Create a fork of the current simulation timeline",
+            description="Create a named fork of the current simulation timeline",
             inputSchema={
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Optional name for this fork (stored in metadata as fork_name)",
+                    },
+                    "activate": {
+                        "type": "boolean",
+                        "description": "If true, the forked timeline becomes the active simulation (default false)",
+                    },
+                },
                 "required": [],
             },
         ),
@@ -116,6 +129,31 @@ async def list_tools() -> list[Tool]:
                     "limit": {
                         "type": "number",
                         "description": "Maximum number of events to return (most recent)",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="get_timeseries",
+            description=(
+                "Get time-series snapshots recorded at each step. "
+                "Optionally filter by variable names and time range."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "variables": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of resource/metric/flag names to include (all if omitted)",
+                    },
+                    "from_time": {
+                        "type": "number",
+                        "description": "Start time (inclusive)",
+                    },
+                    "to_time": {
+                        "type": "number",
+                        "description": "End time (inclusive)",
                     },
                 },
             },
@@ -159,6 +197,14 @@ async def list_tools() -> list[Tool]:
                             "value: {type: 'increment', amount: 0.01}}]"
                         ),
                         "items": {"type": "object", "additionalProperties": True},
+                    },
+                    "priority": {
+                        "type": "number",
+                        "description": "Execution priority (higher = runs first, default 0)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Human-readable description of this rule",
                     },
                 },
                 "required": ["rule_id", "condition", "actions"],
@@ -311,12 +357,38 @@ async def list_tools() -> list[Tool]:
                 "required": ["name"],
             },
         ),
+        Tool(
+            name="batch_apply_actions",
+            description="Apply multiple actions in a single call. Returns results for each action.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "actions": {
+                        "description": "List of actions to apply in sequence. Each item: {action: string, params: object}",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {"type": "string", "description": "Action name"},
+                                "params": {"type": "object", "additionalProperties": True},
+                            },
+                            "required": ["action", "params"],
+                        },
+                    },
+                    "stop_on_failure": {
+                        "type": "boolean",
+                        "description": "Stop processing if any action fails (default true)",
+                    },
+                },
+                "required": ["actions"],
+            },
+        ),
     ]
 
 
 @app.call_tool()
 async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     """Handle tool calls."""
+    global sim
     simulation = get_simulation()
 
     try:
@@ -361,7 +433,8 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             if seed is not None:
                 seed = int(seed)
 
-            simulation.reset(seed=seed)
+            keep_rules = arguments.get("keep_rules", False)
+            simulation.reset(seed=seed, keep_rules=keep_rules)
 
             return [
                 TextContent(
@@ -371,6 +444,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                             "message": "Simulation reset successfully",
                             "simulation_id": str(simulation.state.simulation_id),
                             "seed": seed,
+                            "rule_count": simulation.world_rule_engine.get_rule_count(),
                         },
                         indent=2,
                     ),
@@ -378,7 +452,12 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             ]
 
         elif name == "fork_timeline":
-            forked = simulation.fork()
+            fork_name = arguments.get("name")
+            forked = simulation.fork(name=fork_name)
+
+            activate = arguments.get("activate", False)
+            if activate:
+                sim = forked
 
             return [
                 TextContent(
@@ -389,6 +468,8 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                             "parent_id": str(simulation.state.simulation_id),
                             "child_id": str(forked.state.simulation_id),
                             "forked_at_time": simulation.state.time,
+                            "fork_name": fork_name,
+                            "activated": activate,
                         },
                         indent=2,
                     ),
@@ -412,6 +493,35 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                         },
                         indent=2,
                         default=str,
+                    ),
+                )
+            ]
+
+        elif name == "get_timeseries":
+            variables = arguments.get("variables")
+            from_time = arguments.get("from_time")
+            to_time = arguments.get("to_time")
+            if from_time is not None:
+                from_time = int(from_time)
+            if to_time is not None:
+                to_time = int(to_time)
+
+            snapshots = simulation.get_timeseries(
+                variables=variables,
+                from_time=from_time,
+                to_time=to_time,
+            )
+
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "count": len(snapshots),
+                            "variables": variables,
+                            "snapshots": snapshots,
+                        },
+                        indent=2,
                     ),
                 )
             ]
@@ -633,7 +743,6 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             ]
 
         elif name == "load_simulation":
-            global sim
             sim_name = arguments.get("name")
 
             try:
@@ -729,6 +838,60 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                         ),
                     )
                 ]
+
+        elif name == "batch_apply_actions":
+            actions_list = arguments.get("actions", [])
+            # Fallback: MCP may serialize array params as JSON strings
+            if isinstance(actions_list, str):
+                import json as _json
+                actions_list = _json.loads(actions_list)
+            stop_on_failure = arguments.get("stop_on_failure", True)
+
+            results = []
+            for i, action_item in enumerate(actions_list):
+                action_name = action_item.get("action")
+                action_params = action_item.get("params", {})
+                try:
+                    result = simulation.apply_action(action_name, action_params)
+                    results.append({
+                        "index": i,
+                        "action": action_name,
+                        "success": result.success,
+                        "message": result.message,
+                        "reason": result.reason,
+                    })
+                    if not result.success and stop_on_failure:
+                        break
+                except Exception as e:
+                    results.append({
+                        "index": i,
+                        "action": action_name,
+                        "success": False,
+                        "message": str(e),
+                    })
+                    if stop_on_failure:
+                        break
+
+            total = len(actions_list)
+            completed = len(results)
+            succeeded = sum(1 for r in results if r.get("success"))
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "total": total,
+                            "completed": completed,
+                            "succeeded": succeeded,
+                            "failed": completed - succeeded,
+                            "results": results,
+                            "state_after": simulation.get_state().model_dump(),
+                        },
+                        indent=2,
+                        default=str,
+                    ),
+                )
+            ]
 
         else:
             raise ValueError(f"Unknown tool: {name}")

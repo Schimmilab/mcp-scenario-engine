@@ -55,15 +55,27 @@ class SimulationPersistence:
                     }
                 )
 
-        # Serialize constraints
+        # Serialize constraints with enough info to restore them
         constraints_data = []
         for constraint in engine.constraint_engine.constraints:
-            constraints_data.append(
-                {
+            c_type = type(constraint).__name__
+            if c_type == "NonNegativeResourceConstraint":
+                constraints_data.append({
+                    "type": c_type,
+                    "resource_name": constraint.resource_name,
+                })
+            elif c_type == "MaxResourceConstraint":
+                constraints_data.append({
+                    "type": c_type,
+                    "resource_name": constraint.resource_name,
+                    "max_value": constraint.max_value,
+                })
+            else:
+                constraints_data.append({
+                    "type": c_type,
                     "constraint_id": constraint.constraint_id,
-                    "type": type(constraint).__name__,
-                }
-            )
+                    "note": "Cannot serialize this constraint type fully",
+                })
 
         # Serialize history
         history_data = [event.model_dump(mode="json") for event in engine.history]
@@ -76,6 +88,7 @@ class SimulationPersistence:
             "rules": rules_data,
             "constraints": constraints_data,
             "history": history_data,
+            "snapshots": engine.snapshots,
             "seed": engine.state.seed,
         }
 
@@ -133,7 +146,21 @@ class SimulationPersistence:
             event = HistoryEvent(**event_data)
             engine.history.append(event)
 
-        # Note: Constraints are not restored (would need constraint registry)
+        # Restore timeseries snapshots
+        engine.snapshots = save_data.get("snapshots", [])
+
+        # Restore constraints
+        from .constraints import MaxResourceConstraint, NonNegativeResourceConstraint
+        for c_data in save_data.get("constraints", []):
+            c_type = c_data.get("type")
+            if c_type == "NonNegativeResourceConstraint":
+                engine.constraint_engine.add_constraint(
+                    NonNegativeResourceConstraint(c_data["resource_name"])
+                )
+            elif c_type == "MaxResourceConstraint":
+                engine.constraint_engine.add_constraint(
+                    MaxResourceConstraint(c_data["resource_name"], c_data["max_value"])
+                )
 
         return engine
 

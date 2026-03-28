@@ -131,6 +131,10 @@ class DynamicRule:
         elif cond_type == "always":
             return True
 
+        elif cond_type == "time_modulo":
+            n = condition.get("n", 1)
+            return state.time % n == 0 and state.time > 0
+
         else:
             raise ValueError(f"Unknown condition type: {cond_type}")
 
@@ -188,6 +192,16 @@ class DynamicRule:
         elif val_type == "time":
             return float(state.time)
 
+        elif val_type == "flag":
+            return 1.0 if state.flags.get(value_spec["name"], False) else 0.0
+
+        elif val_type == "metadata":
+            return float(state.metadata.get(value_spec["name"], 0))
+
+        elif val_type == "increment":
+            # increment is context-dependent; return the amount for use in adjust_* actions
+            return float(value_spec.get("amount", 0))
+
         # Arithmetic operations
         elif val_type == "add":
             values = [self._compute_value(v, state) for v in value_spec["values"]]
@@ -212,6 +226,20 @@ class DynamicRule:
                 raise ValueError("Division by zero")
             return numerator / denominator
 
+        elif val_type == "min":
+            values = [self._compute_value(v, state) for v in value_spec["values"]]
+            return min(values)
+
+        elif val_type == "max":
+            values = [self._compute_value(v, state) for v in value_spec["values"]]
+            return max(values)
+
+        elif val_type == "clamp":
+            value = self._compute_value(value_spec["value"], state)
+            min_val = self._compute_value(value_spec["min"], state)
+            max_val = self._compute_value(value_spec["max"], state)
+            return max(min_val, min(max_val, value))
+
         else:
             raise ValueError(f"Unknown value type: {val_type}")
 
@@ -223,13 +251,23 @@ class DynamicRule:
 
         if action_type == "set_resource":
             resource = action["resource"]
-            value = self._compute_value(action["value"], state)
-            state.resources[resource] = float(value)
+            value_spec = action["value"]
+            if isinstance(value_spec, dict) and value_spec.get("type") == "increment":
+                amount = float(value_spec.get("amount", 0))
+                state.resources[resource] = state.resources.get(resource, 0.0) + amount
+            else:
+                value = self._compute_value(value_spec, state)
+                state.resources[resource] = float(value)
 
         elif action_type == "set_metric":
             metric = action["metric"]
-            value = self._compute_value(action["value"], state)
-            state.metrics[metric] = float(value)
+            value_spec = action["value"]
+            if isinstance(value_spec, dict) and value_spec.get("type") == "increment":
+                amount = float(value_spec.get("amount", 0))
+                state.metrics[metric] = state.metrics.get(metric, 0.0) + amount
+            else:
+                value = self._compute_value(value_spec, state)
+                state.metrics[metric] = float(value)
 
         elif action_type == "set_flag":
             flag = action["flag"]
@@ -240,6 +278,36 @@ class DynamicRule:
             key = action["key"]
             value = self._compute_value(action["value"], state)
             state.metadata[key] = value
+
+        elif action_type == "adjust_resource":
+            resource = action["resource"]
+            amount = self._compute_value(action.get("amount", action.get("delta", 0)), state)
+            state.resources[resource] = state.resources.get(resource, 0.0) + float(amount)
+
+        elif action_type == "adjust_metric":
+            metric = action["metric"]
+            amount = self._compute_value(action.get("amount", action.get("delta", 0)), state)
+            state.metrics[metric] = state.metrics.get(metric, 0.0) + float(amount)
+
+        elif action_type == "adjust_metadata":
+            key = action["key"]
+            amount = self._compute_value(action.get("amount", action.get("delta", 0)), state)
+            current = state.metadata.get(key, 0)
+            state.metadata[key] = float(current) + float(amount)
+
+        elif action_type == "clamp_resource":
+            resource = action["resource"]
+            current = state.resources.get(resource, 0.0)
+            min_val = self._compute_value(action.get("min", float("-inf")), state)
+            max_val = self._compute_value(action.get("max", float("inf")), state)
+            state.resources[resource] = max(min_val, min(max_val, current))
+
+        elif action_type == "clamp_metric":
+            metric = action["metric"]
+            current = state.metrics.get(metric, 0.0)
+            min_val = self._compute_value(action.get("min", float("-inf")), state)
+            max_val = self._compute_value(action.get("max", float("inf")), state)
+            state.metrics[metric] = max(min_val, min(max_val, current))
 
         else:
             raise ValueError(f"Unknown action type: {action_type}")

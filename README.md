@@ -31,11 +31,13 @@ The MCP Scenario Engine is a Model Context Protocol (MCP) server that provides a
 - Time-stepped simulation
 
 ### ✅ Action System
-8 implemented actions:
+10 implemented actions:
 - `step` - Advance time forward
 - `set_resource` - Set resource value
 - `adjust_resource` - Adjust resource by delta
 - `set_metric` - Set metric value
+- `adjust_metric` - Adjust metric by delta (`delta` or `amount` parameter)
+- `initialize` - Batch-initialize resources, metrics, flags, entities in one call
 - `set_flag` - Set boolean flag
 - `add_entity` - Add/update entity
 - `remove_entity` - Remove entity
@@ -89,6 +91,33 @@ The MCP Scenario Engine is a Model Context Protocol (MCP) server that provides a
 - CRUD operations (Save, Load, List, Delete)
 - Metadata inspection without loading
 - Storage in `~/.mcp-scenario-engine/simulations/`
+
+## What's New
+
+### New Actions
+- `adjust_metric` - Adjust a metric by delta (`delta` or `amount` parameter)
+- `initialize` - Batch-initialize resources, metrics, flags, entities in one call
+
+### New Tools
+- `get_timeseries` - Query time-series snapshots with variable and time filters
+- `batch_apply_actions` - Apply multiple actions in a single MCP call
+
+### World Rules Enhancements
+- `adjust_resource`, `adjust_metric`, `adjust_metadata` action types in rules
+- `clamp_resource`, `clamp_metric` — keep values within bounds
+- `min`, `max`, `clamp` value types in `_compute_value`
+- `priority` and `description` fields exposed in `add_world_rule`
+
+### Engine Improvements
+- `step` with `steps: N` now fires world rules N times (one per sub-step)
+- Per-step timeseries snapshots for multi-step calls
+- Manual action snapshots in timeseries (non-step actions that change state)
+- `reset_simulation` gains `keep_rules` parameter
+- `fork_timeline` gains `activate` parameter (makes fork the active simulation)
+
+### Persistence Fixes
+- Timeseries snapshots are saved and restored
+- Constraints (NonNegative + Max) are saved and restored
 
 ## Installation
 
@@ -245,7 +274,7 @@ python -m mcp_scenario_engine.server
 
 ## MCP Tools
 
-The server provides 16 tools:
+The server provides 20 tools:
 
 ### State Management
 
@@ -285,7 +314,8 @@ Reset simulation to initial state.
 
 ```json
 {
-  "seed": 42
+  "seed": 42,
+  "keep_rules": true
 }
 ```
 
@@ -293,7 +323,10 @@ Reset simulation to initial state.
 Fork timeline for "what-if" scenarios.
 
 ```json
-{}
+{
+  "name": "optimistic_scenario",
+  "activate": true
+}
 ```
 
 #### `get_history`
@@ -416,6 +449,47 @@ Delete a saved simulation.
 {
   "name": "devops_scenario_1"
 }
+```
+
+### Extended Actions
+
+#### `adjust_metric`
+Adjust a metric by delta.
+```json
+{"action": "adjust_metric", "params": {"metric": "score", "delta": 5.0}}
+```
+
+#### `initialize`
+Batch-initialize multiple state fields in one call.
+```json
+{
+  "action": "initialize",
+  "params": {
+    "resources": {"budget": 10000, "energy": 100},
+    "metrics": {"output": 0, "efficiency": 1.0},
+    "flags": {"active": true}
+  }
+}
+```
+
+### Batch & Timeseries
+
+#### `batch_apply_actions`
+Apply multiple actions in a single MCP call.
+```json
+{
+  "actions": [
+    {"action": "initialize", "params": {"resources": {"budget": 1000}}},
+    {"action": "step", "params": {"steps": 5}}
+  ],
+  "stop_on_failure": true
+}
+```
+
+#### `get_timeseries`
+Query time-series snapshots recorded at each step.
+```json
+{"variables": ["budget", "output"], "from_time": 0, "to_time": 10}
 ```
 
 ## State Schema (v1)
@@ -636,6 +710,47 @@ Truth-telling test:
 • Overbidding → Same surplus ($25), no benefit
 ```
 
+## Claude Code Workspace
+
+This repository includes a ready-to-use Claude Code workspace with simulation skills and templates.
+
+### Quick Setup
+
+1. Use this repository directory as your Claude Code workspace, **or**
+2. Copy the `workspace/` folder and `.claude/` folder to your own project
+
+### Available Skills (Slash Commands)
+
+| Skill | Trigger | Description |
+|---|---|---|
+| `/sim-spieltheorie` | Game theory | Nash equilibrium, Prisoner's Dilemma, Tit-for-Tat |
+| `/sim-monte-carlo` | Risk/probability | Risk estimation, uncertainty quantification via forks |
+| `/sim-systemdynamik` | System dynamics | Stocks & Flows, SIR models, Lotka-Volterra |
+| `/sim-markov` | State transitions | Churn, health states, project phases, credit risk |
+| `/sim-agenten` | Agent-based models | Markets, opinion dynamics, emergence |
+| `/sim-optimierung` | Optimization | Grid search, portfolio, resource allocation |
+| `/sim-orchestrator` | Multi-agent | Orchestrator + Sub-agents for coupled simulations |
+
+### Workspace Structure
+
+```
+workspace/
+├── CLAUDE.md          # Engine reference & project context
+├── templates/         # Simulation templates (health, project, system)
+├── designs/           # Pre-simulation design documents
+├── results/           # Saved simulation results (examples included)
+├── analysis/          # Analysis & insights
+├── data/              # Input data & reference values
+└── scripts/           # Helper scripts
+```
+
+### Example Results
+
+See `workspace/results/` for three worked examples:
+- `example_spieltheorie.md` — Tit-for-Tat vs Always Defect game theory simulation
+- `example_sir_epidemie.md` — SIR epidemic model with R₀=6
+- `example_volkswirtschaft.md` — 3-agent Keynesian economy simulation
+
 ## Testing
 
 ```bash
@@ -682,7 +797,7 @@ mcp-scenario-engine/
 │   ├── dynamic_rules.py    # Dynamic Rule System
 │   ├── world_rules.py      # World Rule Engine
 │   ├── persistence.py      # Persistence Layer
-│   └── server.py           # MCP Server (16 Tools)
+│   └── server.py           # MCP Server (20 Tools)
 ├── tests/
 │   ├── test_simulation.py  # Unit Tests
 │   ├── test_constraints.py # Constraint Tests

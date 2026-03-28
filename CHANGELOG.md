@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — v1.2.0
+
+### Added
+- `adjust_metric` action (with `delta`/`amount` parameter alias)
+- `initialize` action for batch state setup
+- `get_timeseries` tool — time-series snapshots with variable/time filters
+- `batch_apply_actions` tool — multiple actions in one MCP call
+- `clamp_resource` / `clamp_metric` world rule action types
+- `min`, `max`, `clamp` value types in world rule formulas
+- `priority` + `description` parameters exposed in `add_world_rule`
+- `keep_rules` parameter for `reset_simulation`
+- `activate` parameter for `fork_timeline`
+- Claude Code workspace with 7 simulation skills
+- Workspace templates (health, project, system)
+- Example simulation results (game theory, SIR, economics)
+
+### Fixed
+- `step` with `steps: N` now fires world rules N times (one per sub-step)
+- Timeseries snapshots are now saved and restored with persistence
+- Constraints (NonNegative + Max) are now saved and restored
+- `batch_apply_actions` accepts both array and JSON-string input
+- `adjust_resource`/`adjust_metric` accept both `delta` and `amount` as parameter name
+- `global sim` declaration moved to function scope top in server.py
+
 ## [1.1.0] - 2025-01-15
 
 ### Added
