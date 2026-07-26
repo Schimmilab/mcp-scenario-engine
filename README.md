@@ -888,3 +888,8 @@ MIT
 ## Contact
 
 For questions or issues, please open an issue on GitHub.
+
+## Maintainer
+
+Schimmi — https://schimmilab.de
+Issues und Pull Requests willkommen.
