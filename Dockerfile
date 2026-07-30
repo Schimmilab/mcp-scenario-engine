@@ -1,5 +1,5 @@
 # Multi-stage build for MCP Scenario Engine
-FROM python:3.11-slim as builder
+FROM python:3.14-slim as builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ COPY src/ ./src/
 RUN python -m build --wheel
 
 # Runtime stage
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
