@@ -6,19 +6,19 @@ authors = [{name = "MCP Scenario Engine", email = "info@example.com"}]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp>=1.2,<2",
-    "pydantic>=2.0.0",
-    "structlog>=24.0.0",
+    "mcp==1.29.0",
+    "pydantic==2.13.4",
+    "structlog==26.1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.0",
-    "pytest-cov>=4.1.0",
-    "pytest-asyncio>=0.23.0",
-    "ruff>=0.3.0",
-    "black>=24.0.0",
-    "mypy>=1.8.0",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.16.0",
+    "black==26.5.1",
+    "mypy==2.3.0",
 ]
 
 [build-system]
