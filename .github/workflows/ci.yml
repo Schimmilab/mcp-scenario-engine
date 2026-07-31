@@ -38,6 +38,18 @@ jobs:
       run: |
         pytest tests/ -v --cov=mcp_scenario_engine --cov-report=xml --cov-report=term
 
+    # Smoke-Test: startet den Server wirklich und spricht das MCP-Protokoll
+    # (initialize -> tools/list). pytest beantwortet nicht, ob der Server nach
+    # einer Frischinstallation ueberhaupt laeuft; ein Import-Test auch nicht,
+    # weil Tools in Dekoratoren registriert werden.
+    # Anlass: 30.07.2026 sechs Server aufs neue SDK umgestellt und gemerged,
+    # am 31.07. waren fuenf tot - die CI hatte nichts gemerkt.
+    - name: MCP-Smoke
+      uses: Schimmilab/mcp-smoke-action@v1
+      with:
+        command: python -m mcp_scenario_engine.server
+        min-tools: "1"
+
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v7.0.0
       with:
