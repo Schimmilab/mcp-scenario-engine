@@ -48,7 +48,11 @@ jobs:
       uses: Schimmilab/mcp-smoke-action@v1
       with:
         command: python -m mcp_scenario_engine.server
-        min-tools: "1"
+        # 17 statt 1: der erste CI-Lauf zeigte 19 Tools. Eine Schwelle von 1
+        # waere zahnlos - ein SDK-Bruch, der 18 Tools verschluckt, kaeme
+        # trotzdem gruen durch. Etwas Luft nach unten, damit nicht jede
+        # Umbenennung rot wird.
+        min-tools: "17"
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v7.0.0
