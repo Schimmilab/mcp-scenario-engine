@@ -6,7 +6,7 @@ authors = [{name = "MCP Scenario Engine", email = "info@example.com"}]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp==1.29.0",
+    "mcp==2.1.1",
     "pydantic==2.13.5",
     "structlog==26.1.0",
 ]
