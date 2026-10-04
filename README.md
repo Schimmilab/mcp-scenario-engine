@@ -141,6 +141,34 @@ pip install -e ".[dev]"
 
 ### Docker
 
+#### Prebuilt image (GHCR) — no clone needed
+
+Every release is published as a container image:
+
+```bash
+docker pull ghcr.io/schimmilab/mcp-scenario-engine:latest
+```
+
+Add it to your MCP client config (Claude Code `.mcp.json`, Claude Desktop `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "scenario-engine": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm",
+               "-v", "scenario-engine-data:/root/.mcp-scenario-engine",
+               "ghcr.io/schimmilab/mcp-scenario-engine:latest"]
+    }
+  }
+}
+```
+
+The named volume keeps saved simulations between sessions; drop the `-v` line if you don't need persistence.
+Pin a version instead of `latest` (e.g. `:1.2.1`) for reproducible runs.
+
+#### Build locally
+
 #### Build and Run Demos
 
 ```bash
