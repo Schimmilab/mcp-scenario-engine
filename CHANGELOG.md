@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-10-04
+
+### Added
+- Container image on GHCR: `ghcr.io/schimmilab/mcp-scenario-engine` (`:<version>` and `:latest`), built and published by `.github/workflows/release.yml` on every `v*` tag
+- The release workflow checks a real MCP handshake (`initialize` + `tools/list`) against the built image before pushing
+- README: copy-paste MCP config for the prebuilt image
+
 ## [Unreleased] — v1.2.0
 
 ### Added
