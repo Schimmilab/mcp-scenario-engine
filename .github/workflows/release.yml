@@ -46,15 +46,16 @@ jobs:
         load: true
         tags: scenario-engine:check
 
-    - name: MCP handshake
-      run: |
-        printf '%s\n' \
-          '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
-          '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
-          '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
-          | timeout 30 docker run -i --rm scenario-engine:check > out.jsonl || true
-        cat out.jsonl
-        grep -q '"id":2' out.jsonl && grep -q '"tools"' out.jsonl
+    # Handshake ueber dieselbe Smoke-Action wie die CI (initialize + tools/list + Mindestzahl),
+    # nicht mehr ueber eine printf-Pipe: eine Pipe kann stdin schliessen, bevor der Server
+    # antwortet (05.10.2026 bei somneo-mcp-server lokal 0 Tools gemessen, obwohl er lief),
+    # und "grep tools" prueft keine Anzahl. Vorab gegen das Image 1.2.1 gemessen:
+    # 19 Tools gruen, min-tools 99 -> Exit 1.
+    - name: MCP-Smoke gegen das Image
+      uses: Schimmilab/mcp-smoke-action@v1
+      with:
+        command: docker run -i --rm scenario-engine:check
+        min-tools: "17"
 
     - name: Push
       uses: docker/build-push-action@v6
