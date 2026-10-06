@@ -40,7 +40,7 @@ jobs:
     # Vor dem Push pruefen, dass der Server im Image wirklich als MCP antwortet —
     # ein Image, das baut, aber nicht startet, wird sonst sauber verteilt.
     - name: Build (local)
-      uses: docker/build-push-action@v6.19.2
+      uses: docker/build-push-action@v7.4.0
       with:
         context: .
         load: true
@@ -58,7 +58,7 @@ jobs:
         min-tools: "17"
 
     - name: Push
-      uses: docker/build-push-action@v6.19.2
+      uses: docker/build-push-action@v7.4.0
       with:
         context: .
         push: true
